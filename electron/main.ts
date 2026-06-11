@@ -1,11 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { execSync } from 'child_process';
 
-let mainWindow;
-let devServerPort = 5174;
-let devServerReady = false;
+let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,63 +21,20 @@ function createWindow() {
     show: false,
   });
 
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-
-  if (isDev) {
-    waitForDevServer().then(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.loadURL(`http://localhost:${devServerPort}`).catch((err) => {
-          console.error('Failed to load dev server:', err.message);
-        });
-        mainWindow.webContents.openDevTools();
-      }
-    }).catch(() => {
-      console.error('Dev server not available. Please run "npm run dev" first.');
-    });
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch((err) => {
-      console.error('Failed to load production build:', err);
-    });
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    mainWindow?.show();
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-}
-
-async function waitForDevServer(maxAttempts = 60, interval = 1000) {
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const http = require('http');
-      await new Promise((resolve, reject) => {
-        const req = http.get(`http://localhost:${devServerPort}`, (res) => {
-          if (res.statusCode === 200) {
-            resolve(true);
-          } else {
-            reject(new Error(`Status: ${res.statusCode}`));
-          }
-        });
-        req.on('error', reject);
-        req.setTimeout(1000, () => {
-          req.destroy();
-          reject(new Error('Timeout'));
-        });
-      });
-      console.log('Dev server ready');
-      devServerReady = true;
-      return true;
-    } catch (err) {
-      if (i < maxAttempts - 1) {
-        console.log(`Waiting for dev server... (${i + 1}/${maxAttempts})`);
-        await new Promise(resolve => setTimeout(resolve, interval));
-      }
-    }
-  }
-  throw new Error('Dev server not available');
 }
 
 app.whenReady().then(() => {
@@ -98,7 +53,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-function parseShortcut(targetPath) {
+function parseShortcut(targetPath: string): string | null {
   try {
     const psScript = `
       $shell = New-Object -ComObject WScript.Shell
@@ -115,9 +70,21 @@ function parseShortcut(targetPath) {
   }
 }
 
+interface ScannedFile {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  createdAt: string;
+  modifiedAt: string;
+  fullPath: string;
+  shortcutTarget?: string;
+}
+
 ipcMain.handle('select-folder', async () => {
   try {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
       title: '选择文件夹',
     });
@@ -133,11 +100,11 @@ ipcMain.handle('select-folder', async () => {
   }
 });
 
-ipcMain.handle('scan-directory', async (event, dirPath) => {
-  const files = [];
-  const shortcutTargets = new Map();
+ipcMain.handle('scan-directory', async (_event, dirPath: string) => {
+  const files: ScannedFile[] = [];
+  const shortcutTargets = new Map<string, string>();
   
-  async function scanDir(currentPath) {
+  async function scanDir(currentPath: string) {
     try {
       const entries = fs.readdirSync(currentPath, { withFileTypes: true });
       
@@ -156,15 +123,16 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
             const stats = fs.statSync(fullPath);
             
             let type = 'document';
-            let shortcutTarget = undefined;
+            let shortcutTarget: string | undefined;
             
             if (imageExts.includes(ext)) {
               type = 'image';
             } else if (shortcutExts.includes(ext)) {
               type = 'shortcut';
-              shortcutTarget = parseShortcut(fullPath);
-              if (shortcutTarget) {
-                const targetRelative = path.relative(dirPath, shortcutTarget);
+              const target = parseShortcut(fullPath);
+              if (target) {
+                shortcutTarget = target;
+                const targetRelative = path.relative(dirPath, target);
                 if (!targetRelative.startsWith('..')) {
                   shortcutTargets.set(fullPath, targetRelative);
                 }
@@ -177,12 +145,12 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
               id: `file-${Buffer.from(relativePath).toString('base64').replace(/[^a-zA-Z0-9]/g, '')}`,
               name: entry.name,
               path: relativePath,
-              type: type,
+              type,
               size: stats.size,
               createdAt: stats.birthtime.toISOString(),
               modifiedAt: stats.mtime.toISOString(),
-              fullPath: fullPath,
-              shortcutTarget: shortcutTarget,
+              fullPath,
+              shortcutTarget,
             });
           }
         }
@@ -200,7 +168,7 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
       if (relativeTarget) {
         file.shortcutTarget = relativeTarget;
       } else {
-        const targetFile = files.find(f => f.fullPath === file.shortcutTarget || f.path === path.basename(file.shortcutTarget));
+        const targetFile = files.find(f => f.fullPath === file.shortcutTarget || f.path === path.basename(file.shortcutTarget!));
         if (targetFile) {
           file.shortcutTarget = targetFile.path;
         }
@@ -211,7 +179,7 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
   return files;
 });
 
-ipcMain.handle('read-file-content', async (event, filePath) => {
+ipcMain.handle('read-file-content', async (_event, filePath: string) => {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     return content;
@@ -221,7 +189,7 @@ ipcMain.handle('read-file-content', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('get-file-preview', async (event, filePath) => {
+ipcMain.handle('get-file-preview', async (_event, filePath: string) => {
   try {
     const ext = path.extname(filePath).toLowerCase();
     const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico'];
@@ -240,9 +208,9 @@ ipcMain.handle('get-file-preview', async (event, filePath) => {
   }
 });
 
-ipcMain.handle('export-image', async (event, dataUrl, filename) => {
+ipcMain.handle('export-image', async (_event, dataUrl: string, filename: string) => {
   try {
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const result = await dialog.showSaveDialog(mainWindow!, {
       defaultPath: filename,
       filters: [{ name: 'Images', extensions: ['png'] }],
     });
@@ -260,9 +228,9 @@ ipcMain.handle('export-image', async (event, dataUrl, filename) => {
   }
 });
 
-ipcMain.handle('export-file', async (event, content, filename, extension) => {
+ipcMain.handle('export-file', async (_event, content: string, filename: string, extension: string) => {
   try {
-    const result = await dialog.showSaveDialog(mainWindow, {
+    const result = await dialog.showSaveDialog(mainWindow!, {
       defaultPath: filename,
       filters: [{ name: 'Files', extensions: [extension] }],
     });

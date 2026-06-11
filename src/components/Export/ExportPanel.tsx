@@ -13,6 +13,19 @@ import {
 } from '../../services/exportService';
 import { findOrphanFiles, findDuplicateFiles } from '../../services/searchService';
 
+declare global {
+  interface Window {
+    electronAPI?: {
+      selectFolder: () => Promise<string | null>;
+      scanDirectory: (path: string) => Promise<any[]>;
+      readFileContent: (path: string) => Promise<string>;
+      getFilePreview: (path: string) => Promise<string | null>;
+      exportImage: (dataUrl: string, filename: string) => Promise<boolean>;
+      exportFile: (content: string, filename: string, extension: string) => Promise<boolean>;
+    };
+  }
+}
+
 interface ExportPanelProps {
   graphRef?: React.RefObject<HTMLDivElement>;
 }
@@ -70,59 +83,127 @@ export function ExportPanel({ graphRef }: ExportPanelProps) {
 
     setIsExporting(true);
     try {
-      const success = await exportGraphAsImage(graphRef.current, 'relationship-graph');
+      let success = false;
+      
+      const dataUrl = await exportGraphAsImage(graphRef.current, 'relationship-graph');
+      
+      if (dataUrl && window.electronAPI) {
+        success = await window.electronAPI.exportImage(dataUrl, 'relationship-graph.png');
+      } else if (dataUrl) {
+        const link = document.createElement('a');
+        link.download = 'relationship-graph.png';
+        link.href = dataUrl;
+        link.click();
+        success = true;
+      }
+      
       if (success) {
-        message.success('关系图已导出为 PNG 图片');
+        message.success('关系图已导出');
       }
     } catch (error) {
-      message.error('导出失败');
+      console.error('Export error:', error);
     } finally {
       setIsExporting(false);
     }
   };
 
-  const handleExportList = () => {
+  const handleExportList = async () => {
     setIsExporting(true);
     try {
       let success = false;
+      let content = '';
+      let filename = '';
+      let extension = '';
+
       switch (listFormat) {
         case 'csv':
-          success = exportFileListAsCSV(filteredFiles, 'file-list');
+          content = generateCSV(filteredFiles);
+          filename = 'file-list.csv';
+          extension = 'csv';
           break;
         case 'json':
-          success = exportFileListAsJSON(filteredFiles, 'file-list');
+          content = JSON.stringify(filteredFiles, null, 2);
+          filename = 'file-list.json';
+          extension = 'json';
           break;
         case 'excel':
-          success = exportFileListAsExcel(filteredFiles, 'file-list');
-          break;
+          exportFileListAsExcel(filteredFiles, 'file-list');
+          setIsExporting(false);
+          message.success('文件清单已导出为 Excel 格式');
+          return;
       }
+
+      if (window.electronAPI) {
+        success = await window.electronAPI.exportFile(content, filename, extension);
+      } else {
+        downloadFile(content, filename);
+        success = true;
+      }
+
       if (success) {
         message.success(`文件清单已导出为 ${listFormat.toUpperCase()} 格式`);
       }
     } catch (error) {
-      message.error('导出失败');
+      console.error('Export error:', error);
     } finally {
       setIsExporting(false);
     }
   };
 
-  const handleExportSuggestions = (format: 'pdf' | 'txt') => {
+  const handleExportSuggestions = async (format: 'pdf' | 'txt') => {
     setIsExporting(true);
     try {
       let success = false;
+
       if (format === 'pdf') {
-        success = exportSuggestionsAsPDF(suggestions, 'organization-suggestions');
+        exportSuggestionsAsPDF(suggestions, 'organization-suggestions');
+        message.success('整理建议已导出为 PDF 格式');
       } else {
-        success = exportSuggestionsAsText(suggestions, 'organization-suggestions');
-      }
-      if (success) {
-        message.success(`整理建议已导出为 ${format.toUpperCase()} 格式`);
+        if (window.electronAPI) {
+          success = await window.electronAPI.exportFile(suggestions, 'organization-suggestions.txt', 'txt');
+        } else {
+          downloadFile(suggestions, 'organization-suggestions.txt');
+          success = true;
+        }
+
+        if (success) {
+          message.success('整理建议已导出为文本格式');
+        }
       }
     } catch (error) {
-      message.error('导出失败');
+      console.error('Export error:', error);
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const generateCSV = (files: any[]): string => {
+    const headers = ['文件名', '路径', '类型', '大小(字节)', '创建时间', '修改时间'];
+    const rows = files.map((file) => [
+      file.name,
+      file.path,
+      file.type,
+      file.size.toString(),
+      file.createdAt,
+      file.modifiedAt,
+    ]);
+
+    return [
+      headers.join(','),
+      ...rows.map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+      ),
+    ].join('\n');
+  };
+
+  const downloadFile = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (

@@ -1,5 +1,4 @@
 import { FileNode } from '../types/file';
-import { RelationshipEdge } from '../types/relationship';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -7,7 +6,7 @@ import { jsPDF } from 'jspdf';
 export async function exportGraphAsImage(
   graphElement: HTMLElement,
   filename: string = 'relationship-graph'
-): Promise<boolean> {
+): Promise<string | null> {
   try {
     const canvas = await html2canvas(graphElement, {
       backgroundColor: '#1a1a2e',
@@ -16,15 +15,10 @@ export async function exportGraphAsImage(
       useCORS: true,
     });
 
-    const link = document.createElement('a');
-    link.download = `${filename}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-
-    return true;
+    return canvas.toDataURL('image/png');
   } catch (error) {
     console.error('Error exporting graph as image:', error);
-    return false;
+    return null;
   }
 }
 

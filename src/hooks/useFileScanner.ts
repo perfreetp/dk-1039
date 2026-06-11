@@ -35,6 +35,37 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function normalizeForMatching(name: string): string[] {
+  const patterns: string[] = [];
+  
+  const withoutExt = name.replace(/\.[^/.]+$/, '');
+  
+  patterns.push(name);
+  patterns.push(withoutExt);
+  
+  patterns.push(withoutExt.replace(/\s+/g, ''));
+  patterns.push(withoutExt.replace(/\s+/g, '-'));
+  patterns.push(withoutExt.replace(/\s+/g, '_'));
+  
+  const parts = withoutExt.split(/[\s\-_]+/);
+  if (parts.length > 1) {
+    parts.forEach(part => {
+      if (part.length >= 2) {
+        patterns.push(part);
+      }
+    });
+    
+    const chineseMatch = withoutExt.match(/[\u4e00-\u9fa5]+/g);
+    if (chineseMatch) {
+      chineseMatch.forEach(part => {
+        patterns.push(part);
+      });
+    }
+  }
+  
+  return [...new Set(patterns)].filter(p => p.length >= 2);
+}
+
 export function useFileScanner() {
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -82,20 +113,23 @@ export function useFileScanner() {
         size: item.size,
         createdAt: item.createdAt,
         modifiedAt: item.modifiedAt,
+        fullPath: item.fullPath,
         shortcutTarget: item.shortcutTarget,
       }));
 
       setProgress(40);
 
       const contentMap = new Map<string, string>();
-      const fileNameMap = new Map<string, FileNode[]>();
+      const fileNamePatterns = new Map<string, FileNode[]>();
 
       files.forEach(file => {
-        const baseName = file.name.replace(/\.[^/.]+$/, '');
-        if (!fileNameMap.has(baseName)) {
-          fileNameMap.set(baseName, []);
-        }
-        fileNameMap.get(baseName)!.push(file);
+        const patterns = normalizeForMatching(file.name);
+        patterns.forEach(pattern => {
+          if (!fileNamePatterns.has(pattern)) {
+            fileNamePatterns.set(pattern, []);
+          }
+          fileNamePatterns.get(pattern)!.push(file);
+        });
       });
 
       if (window.electronAPI) {
@@ -125,36 +159,28 @@ export function useFileScanner() {
 
         const content = contentMap.get(sourceFile.id) || '';
 
-        fileNameMap.forEach((targetFiles, baseName) => {
+        fileNamePatterns.forEach((targetFiles, pattern) => {
           if (targetFiles[0].id === sourceFile.id) return;
+          if (pattern.length < 2) return;
 
-          const patterns = [
-            baseName,
-            baseName.replace(/\s+/g, ''),
-            baseName.replace(/[_\-]+/g, ''),
-          ];
-
-          for (const pattern of patterns) {
-            if (pattern.length < 2) continue;
-
-            const regex = new RegExp(`\\b${escapeRegExp(pattern)}\\b`, 'i');
-            if (regex.test(content)) {
-              targetFiles.forEach(targetFile => {
-                const relKey = `${sourceFile.id}->${targetFile.id}`;
-                if (!addedRelations.has(relKey)) {
-                  addedRelations.add(relKey);
-                  relationships.push(
-                    createRelationship(
-                      sourceFile.id,
-                      targetFile.id,
-                      'mention',
-                      `在 "${sourceFile.name}" 中提及 "${targetFile.name}"`
-                    )
-                  );
-                }
-              });
-              break;
-            }
+          const regex = new RegExp(escapeRegExp(pattern), 'i');
+          if (regex.test(content)) {
+            targetFiles.forEach(targetFile => {
+              if (targetFile.id === sourceFile.id) return;
+              
+              const relKey = `${sourceFile.id}->${targetFile.id}`;
+              if (!addedRelations.has(relKey)) {
+                addedRelations.add(relKey);
+                relationships.push(
+                  createRelationship(
+                    sourceFile.id,
+                    targetFile.id,
+                    'mention',
+                    `在 "${sourceFile.name}" 中提及 "${targetFile.name}"`
+                  )
+                );
+              }
+            });
           }
         });
       });
