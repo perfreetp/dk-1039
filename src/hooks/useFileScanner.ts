@@ -28,6 +28,11 @@ interface ScannedFile {
   createdAt: string;
   modifiedAt: string;
   fullPath?: string;
+  shortcutTarget?: string;
+}
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function useFileScanner() {
@@ -67,7 +72,7 @@ export function useFileScanner() {
         scanResults = await window.electronAPI.scanDirectory(dirPath);
       }
 
-      setProgress(50);
+      setProgress(30);
 
       const files: FileNode[] = scanResults.map((item: ScannedFile) => ({
         id: item.id,
@@ -77,16 +82,28 @@ export function useFileScanner() {
         size: item.size,
         createdAt: item.createdAt,
         modifiedAt: item.modifiedAt,
+        shortcutTarget: item.shortcutTarget,
       }));
 
-      setProgress(70);
+      setProgress(40);
 
       const contentMap = new Map<string, string>();
+      const fileNameMap = new Map<string, FileNode[]>();
+
+      files.forEach(file => {
+        const baseName = file.name.replace(/\.[^/.]+$/, '');
+        if (!fileNameMap.has(baseName)) {
+          fileNameMap.set(baseName, []);
+        }
+        fileNameMap.get(baseName)!.push(file);
+      });
+
       if (window.electronAPI) {
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+        const documentFiles = files.filter(f => f.type === 'document');
+        for (let i = 0; i < documentFiles.length; i++) {
+          const file = documentFiles[i];
           const scannedFile = scanResults.find(sf => sf.id === file.id);
-          if (file.type === 'document' && scannedFile?.fullPath) {
+          if (scannedFile?.fullPath) {
             try {
               const content = await window.electronAPI.readFileContent(scannedFile.fullPath);
               contentMap.set(file.id, content);
@@ -94,47 +111,78 @@ export function useFileScanner() {
               console.error(`Error reading file content: ${file.name}`, error);
             }
           }
-          setProgress(70 + ((i + 1) / files.length) * 20);
+          setProgress(40 + ((i + 1) / documentFiles.length) * 30);
         }
       }
 
-      setProgress(90);
+      setProgress(70);
 
-      const mentions = detectFileMentions(files, contentMap);
-      const relationships: RelationshipEdge[] = mentions.map((m) =>
-        createRelationship(m.sourceId, m.targetId, 'mention', undefined, 5)
-      );
+      const relationships: RelationshipEdge[] = [];
+      const addedRelations = new Set<string>();
 
-      const documentFiles = files.filter(f => f.type === 'document');
-      for (let i = 0; i < documentFiles.length; i++) {
-        const file1 = documentFiles[i];
-        for (let j = i + 1; j < documentFiles.length; j++) {
-          const file2 = documentFiles[j];
-          const content = contentMap.get(file1.id) || '';
-          const file2Name = file2.name.replace(/\.[^/.]+$/, '');
+      files.forEach(sourceFile => {
+        if (sourceFile.type !== 'document') return;
+
+        const content = contentMap.get(sourceFile.id) || '';
+
+        fileNameMap.forEach((targetFiles, baseName) => {
+          if (targetFiles[0].id === sourceFile.id) return;
+
           const patterns = [
-            file2Name,
-            file2Name.replace(/\s+/g, ''),
-            file2Name.replace(/[_-]/g, ''),
+            baseName,
+            baseName.replace(/\s+/g, ''),
+            baseName.replace(/[_\-]+/g, ''),
           ];
 
           for (const pattern of patterns) {
-            const regex = new RegExp(`\\b${pattern}\\b`, 'i');
+            if (pattern.length < 2) continue;
+
+            const regex = new RegExp(`\\b${escapeRegExp(pattern)}\\b`, 'i');
             if (regex.test(content)) {
-              const exists = relationships.find(
-                r => r.sourceId === file1.id && r.targetId === file2.id
-              );
-              if (!exists) {
-                relationships.push(
-                  createRelationship(file1.id, file2.id, 'mention', `在 "${file1.name}" 中提及`)
-                );
-              }
+              targetFiles.forEach(targetFile => {
+                const relKey = `${sourceFile.id}->${targetFile.id}`;
+                if (!addedRelations.has(relKey)) {
+                  addedRelations.add(relKey);
+                  relationships.push(
+                    createRelationship(
+                      sourceFile.id,
+                      targetFile.id,
+                      'mention',
+                      `在 "${sourceFile.name}" 中提及 "${targetFile.name}"`
+                    )
+                  );
+                }
+              });
               break;
             }
           }
+        });
+      });
+
+      files.forEach(file => {
+        if (file.type === 'shortcut' && file.shortcutTarget) {
+          const targetFile = files.find(f => 
+            f.path === file.shortcutTarget || 
+            f.name === file.shortcutTarget ||
+            f.fullPath === file.shortcutTarget
+          );
+
+          if (targetFile) {
+            const relKey = `${file.id}->${targetFile.id}`;
+            if (!addedRelations.has(relKey)) {
+              addedRelations.add(relKey);
+              relationships.push(
+                createRelationship(
+                  file.id,
+                  targetFile.id,
+                  'shortcut',
+                  `快捷方式指向 "${targetFile.name}"`
+                )
+              );
+            }
+          }
         }
-        setProgress(90 + (i / documentFiles.length) * 10);
-      }
+      });
 
       setFiles(files);
       setRelationships(relationships);

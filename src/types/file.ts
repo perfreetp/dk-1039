@@ -10,6 +10,8 @@ export interface FileNode {
   modifiedAt: string;
   preview?: string;
   position?: { x: number; y: number };
+  fullPath?: string;
+  shortcutTarget?: string;
 }
 
 export interface FilterOptions {

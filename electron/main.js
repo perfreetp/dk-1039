@@ -1,8 +1,11 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 let mainWindow;
+let devServerPort = 5174;
+let devServerReady = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,33 +26,60 @@ function createWindow() {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5174').catch((err) => {
-      console.error('Failed to load dev server, waiting for it to start...', err.message);
-      setTimeout(() => {
-        mainWindow.loadURL('http://localhost:5174').catch(() => {
-          console.error('Dev server not available. Please run "npm run dev" first.');
+    waitForDevServer().then(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(`http://localhost:${devServerPort}`).catch((err) => {
+          console.error('Failed to load dev server:', err.message);
         });
-      }, 3000);
+        mainWindow.webContents.openDevTools();
+      }
+    }).catch(() => {
+      console.error('Dev server not available. Please run "npm run dev" first.');
     });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch((err) => {
+      console.error('Failed to load production build:', err);
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error(`Failed to load: ${errorCode} - ${errorDescription}`);
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
 
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
+async function waitForDevServer(maxAttempts = 60, interval = 1000) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const http = require('http');
+      await new Promise((resolve, reject) => {
+        const req = http.get(`http://localhost:${devServerPort}`, (res) => {
+          if (res.statusCode === 200) {
+            resolve(true);
+          } else {
+            reject(new Error(`Status: ${res.statusCode}`));
+          }
+        });
+        req.on('error', reject);
+        req.setTimeout(1000, () => {
+          req.destroy();
+          reject(new Error('Timeout'));
+        });
+      });
+      console.log('Dev server ready');
+      devServerReady = true;
+      return true;
+    } catch (err) {
+      if (i < maxAttempts - 1) {
+        console.log(`Waiting for dev server... (${i + 1}/${maxAttempts})`);
+        await new Promise(resolve => setTimeout(resolve, interval));
+      }
+    }
   }
+  throw new Error('Dev server not available');
 }
 
 app.whenReady().then(() => {
@@ -67,6 +97,23 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
+function parseShortcut(targetPath) {
+  try {
+    const psScript = `
+      $shell = New-Object -ComObject WScript.Shell
+      $shortcut = $shell.CreateShortcut('${targetPath.replace(/'/g, "''")}')
+      Write-Output $shortcut.TargetPath
+    `;
+    const result = execSync(`powershell -Command "${psScript.replace(/\n/g, ' ')}"`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    return result.trim();
+  } catch (error) {
+    return null;
+  }
+}
 
 ipcMain.handle('select-folder', async () => {
   try {
@@ -88,6 +135,7 @@ ipcMain.handle('select-folder', async () => {
 
 ipcMain.handle('scan-directory', async (event, dirPath) => {
   const files = [];
+  const shortcutTargets = new Map();
   
   async function scanDir(currentPath) {
     try {
@@ -108,8 +156,20 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
             const stats = fs.statSync(fullPath);
             
             let type = 'document';
-            if (imageExts.includes(ext)) type = 'image';
-            if (shortcutExts.includes(ext)) type = 'shortcut';
+            let shortcutTarget = undefined;
+            
+            if (imageExts.includes(ext)) {
+              type = 'image';
+            } else if (shortcutExts.includes(ext)) {
+              type = 'shortcut';
+              shortcutTarget = parseShortcut(fullPath);
+              if (shortcutTarget) {
+                const targetRelative = path.relative(dirPath, shortcutTarget);
+                if (!targetRelative.startsWith('..')) {
+                  shortcutTargets.set(fullPath, targetRelative);
+                }
+              }
+            }
             
             const relativePath = path.relative(dirPath, fullPath);
             
@@ -122,6 +182,7 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
               createdAt: stats.birthtime.toISOString(),
               modifiedAt: stats.mtime.toISOString(),
               fullPath: fullPath,
+              shortcutTarget: shortcutTarget,
             });
           }
         }
@@ -132,6 +193,21 @@ ipcMain.handle('scan-directory', async (event, dirPath) => {
   }
   
   await scanDir(dirPath);
+  
+  files.forEach(file => {
+    if (file.type === 'shortcut' && file.shortcutTarget) {
+      const relativeTarget = shortcutTargets.get(file.fullPath);
+      if (relativeTarget) {
+        file.shortcutTarget = relativeTarget;
+      } else {
+        const targetFile = files.find(f => f.fullPath === file.shortcutTarget || f.path === path.basename(file.shortcutTarget));
+        if (targetFile) {
+          file.shortcutTarget = targetFile.path;
+        }
+      }
+    }
+  });
+  
   return files;
 });
 

@@ -5,14 +5,14 @@
   "version": "1.0.0",
   "description": "桌面客户端文件关系图分析器，用于梳理项目资料之间的引用关系",
   "main": "electron/main.js",
-  "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
-    "electron:dev": "node scripts/wait-for-vite.js && electron .",
+    "electron:start": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5174 && electron .\"",
+    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5174 && electron .\"",
     "electron:build": "npm run build && electron-builder",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:mac": "npm run build && electron-builder --mac",
@@ -45,6 +45,7 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
+    "concurrently": "^10.0.3",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.2",
     "eslint": "^9.25.0",
@@ -57,7 +58,8 @@
     "typescript-eslint": "^8.30.1",
     "vite": "^6.3.5",
     "vite-plugin-trae-solo-badge": "^1.0.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "wait-on": "^8.0.5"
   },
   "build": {
     "appId": "com.file-relationship-analyzer.app",
@@ -73,22 +75,27 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
-      ],
-      "icon": "public/icon.ico"
+      ]
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "public/icon.icns"
+      "target": [
+        "dmg"
+      ]
     },
     "linux": {
-      "target": ["AppImage"],
-      "icon": "public/icon.png"
+      "target": [
+        "AppImage"
+      ]
     },
     "nsis": {
       "oneClick": false,
