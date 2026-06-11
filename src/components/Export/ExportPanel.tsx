@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Modal, Radio, Button, Tabs, message, Alert } from 'antd';
+import { Modal, Radio, Button, Tabs, message } from 'antd';
 import { Download, Image, FileSpreadsheet, FileText, FileCode, ClipboardList } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
 import {
@@ -18,13 +18,45 @@ interface ExportPanelProps {
 }
 
 export function ExportPanel({ graphRef }: ExportPanelProps) {
-  const { files, relationships, exportPanelOpen, setExportPanelOpen } = useAppStore();
+  const { files, relationships, filters, exportPanelOpen, setExportPanelOpen } = useAppStore();
   const [exportType, setExportType] = useState<'image' | 'list' | 'suggestions'>('image');
   const [listFormat, setListFormat] = useState<'csv' | 'json' | 'excel'>('csv');
   const [isExporting, setIsExporting] = useState(false);
 
-  const orphanFiles = useMemo(() => findOrphanFiles(files, relationships), [files, relationships]);
-  const duplicateGroups = useMemo(() => findDuplicateFiles(files), [files]);
+  const filteredFiles = useMemo(() => {
+    return files.filter((file) => {
+      if (!filters.fileTypes.includes(file.type)) return false;
+      
+      if (filters.dateRange) {
+        const fileDate = new Date(file.modifiedAt);
+        const start = new Date(filters.dateRange.start);
+        const end = new Date(filters.dateRange.end);
+        end.setHours(23, 59, 59, 999);
+        if (fileDate < start || fileDate > end) return false;
+      }
+      
+      if (filters.searchKeyword) {
+        const keyword = filters.searchKeyword.toLowerCase();
+        if (
+          !file.name.toLowerCase().includes(keyword) &&
+          !file.path.toLowerCase().includes(keyword)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [files, filters]);
+
+  const filteredRelationships = useMemo(() => {
+    const fileIds = new Set(filteredFiles.map(f => f.id));
+    return relationships.filter((rel) => {
+      return fileIds.has(rel.sourceId) && fileIds.has(rel.targetId);
+    });
+  }, [relationships, filteredFiles]);
+
+  const orphanFiles = useMemo(() => findOrphanFiles(filteredFiles, filteredRelationships), [filteredFiles, filteredRelationships]);
+  const duplicateGroups = useMemo(() => findDuplicateFiles(filteredFiles), [filteredFiles]);
   const suggestions = useMemo(
     () => generateOrganizationSuggestions(orphanFiles, duplicateGroups),
     [orphanFiles, duplicateGroups]
@@ -55,13 +87,13 @@ export function ExportPanel({ graphRef }: ExportPanelProps) {
       let success = false;
       switch (listFormat) {
         case 'csv':
-          success = exportFileListAsCSV(files, 'file-list');
+          success = exportFileListAsCSV(filteredFiles, 'file-list');
           break;
         case 'json':
-          success = exportFileListAsJSON(files, 'file-list');
+          success = exportFileListAsJSON(filteredFiles, 'file-list');
           break;
         case 'excel':
-          success = exportFileListAsExcel(files, 'file-list');
+          success = exportFileListAsExcel(filteredFiles, 'file-list');
           break;
       }
       if (success) {
@@ -158,7 +190,7 @@ export function ExportPanel({ graphRef }: ExportPanelProps) {
               children: (
                 <div className="space-y-4 p-4 bg-primary-lighter rounded-lg">
                   <p className="text-gray-400 text-sm">
-                    导出文件清单，支持多种格式。
+                    导出文件清单，支持多种格式。当前筛选条件生效。
                   </p>
 
                   <div>
@@ -190,10 +222,14 @@ export function ExportPanel({ graphRef }: ExportPanelProps) {
                   </div>
 
                   <div className="p-3 bg-primary rounded-lg">
-                    <p className="text-white text-sm font-medium mb-2">统计信息</p>
+                    <p className="text-white text-sm font-medium mb-2">统计信息（当前筛选结果）</p>
                     <ul className="text-gray-400 text-xs space-y-1">
-                      <li>• 文件总数：{files.length}</li>
-                      <li>• 关系总数：{relationships.length}</li>
+                      <li>• 文件总数：{filteredFiles.length}
+                        {filteredFiles.length !== files.length && <span className="text-gray-500"> / {files.length}</span>}
+                      </li>
+                      <li>• 关系总数：{filteredRelationships.length}
+                        {filteredRelationships.length !== relationships.length && <span className="text-gray-500"> / {relationships.length}</span>}
+                      </li>
                     </ul>
                   </div>
 
@@ -220,11 +256,11 @@ export function ExportPanel({ graphRef }: ExportPanelProps) {
               children: (
                 <div className="space-y-4 p-4 bg-primary-lighter rounded-lg">
                   <p className="text-gray-400 text-sm">
-                    生成文件整理建议报告，包含孤立文件和重复文件分析。
+                    生成文件整理建议报告，包含孤立文件和重复文件分析。当前筛选条件生效。
                   </p>
 
                   <div className="p-3 bg-primary rounded-lg">
-                    <p className="text-white text-sm font-medium mb-2">分析结果</p>
+                    <p className="text-white text-sm font-medium mb-2">分析结果（当前筛选结果）</p>
                     <ul className="text-gray-400 text-xs space-y-1">
                       <li>• 孤立文件：{orphanFiles.length} 个</li>
                       <li>• 重复文件：{duplicateGroups.length} 组</li>

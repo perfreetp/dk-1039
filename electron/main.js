@@ -20,9 +20,17 @@ function createWindow() {
     show: false,
   });
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5174');
-    mainWindow.webContents.openDevTools();
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5174').catch((err) => {
+      console.error('Failed to load dev server, waiting for it to start...', err.message);
+      setTimeout(() => {
+        mainWindow.loadURL('http://localhost:5174').catch(() => {
+          console.error('Dev server not available. Please run "npm run dev" first.');
+        });
+      }, 3000);
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -31,12 +39,28 @@ function createWindow() {
     mainWindow.show();
   });
 
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error(`Failed to load: ${errorCode} - ${errorDescription}`);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -44,23 +68,22 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
-});
-
 ipcMain.handle('select-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: '选择文件夹',
-  });
-  
-  if (result.canceled) {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory'],
+      title: '选择文件夹',
+    });
+    
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    
+    return result.filePaths[0];
+  } catch (error) {
+    console.error('Error selecting folder:', error);
     return null;
   }
-  
-  return result.filePaths[0];
 });
 
 ipcMain.handle('scan-directory', async (event, dirPath) => {
@@ -142,16 +165,16 @@ ipcMain.handle('get-file-preview', async (event, filePath) => {
 });
 
 ipcMain.handle('export-image', async (event, dataUrl, filename) => {
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: filename,
-    filters: [{ name: 'Images', extensions: ['png'] }],
-  });
-  
-  if (result.canceled) {
-    return false;
-  }
-  
   try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: filename,
+      filters: [{ name: 'Images', extensions: ['png'] }],
+    });
+    
+    if (result.canceled || !result.filePath) {
+      return false;
+    }
+    
     const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
     fs.writeFileSync(result.filePath, base64Data, 'base64');
     return true;
@@ -162,16 +185,16 @@ ipcMain.handle('export-image', async (event, dataUrl, filename) => {
 });
 
 ipcMain.handle('export-file', async (event, content, filename, extension) => {
-  const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: filename,
-    filters: [{ name: 'Files', extensions: [extension] }],
-  });
-  
-  if (result.canceled) {
-    return false;
-  }
-  
   try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: filename,
+      filters: [{ name: 'Files', extensions: [extension] }],
+    });
+    
+    if (result.canceled || !result.filePath) {
+      return false;
+    }
+    
     fs.writeFileSync(result.filePath, content);
     return true;
   } catch (error) {

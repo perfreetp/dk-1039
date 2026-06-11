@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Select, Input, Button, List, Tag, Empty, message, Checkbox } from 'antd';
 import { Link2, Plus, Trash2, GitMerge, FileText } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
@@ -27,6 +27,10 @@ export function RelationshipEditor() {
   const relevantRelationships = selectedFileId
     ? relationships.filter((r) => r.sourceId === selectedFileId || r.targetId === selectedFileId)
     : relationships;
+
+  useEffect(() => {
+    setSelectedEdgeIds((prev) => prev.filter((id) => relationships.some((r) => r.id === id)));
+  }, [relationships]);
 
   const handleAddRelationship = () => {
     if (!sourceId || !targetId) {
@@ -94,6 +98,19 @@ export function RelationshipEditor() {
     setSelectedEdgeIds([]);
   };
 
+  const handleClose = () => {
+    setEditorOpen(false);
+    setMode('list');
+    setSelectedEdgeIds([]);
+  };
+
+  const handleModeChange = (newMode: 'list' | 'add' | 'merge') => {
+    setMode(newMode);
+    if (newMode === 'list') {
+      setSelectedEdgeIds([]);
+    }
+  };
+
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'mention':
@@ -125,11 +142,7 @@ export function RelationshipEditor() {
         </div>
       }
       open={editorOpen}
-      onCancel={() => {
-        setEditorOpen(false);
-        setMode('list');
-        setSelectedEdgeIds([]);
-      }}
+      onCancel={handleClose}
       footer={null}
       width={700}
       className="custom-modal"
@@ -138,20 +151,20 @@ export function RelationshipEditor() {
         <div className="flex gap-2 flex-wrap">
           <Button
             type={mode === 'list' ? 'primary' : 'default'}
-            onClick={() => setMode('list')}
+            onClick={() => handleModeChange('list')}
           >
             关系列表
           </Button>
           <Button
             type={mode === 'add' ? 'primary' : 'default'}
-            onClick={() => setMode('add')}
+            onClick={() => handleModeChange('add')}
             icon={<Plus size={14} />}
           >
             新增关系
           </Button>
           <Button
             type={mode === 'merge' ? 'primary' : 'default'}
-            onClick={() => setMode('merge')}
+            onClick={() => handleModeChange('merge')}
             icon={<GitMerge size={14} />}
           >
             合并关系
@@ -168,7 +181,7 @@ export function RelationshipEditor() {
               {relevantRelationships.length > 0 && (
                 <div className="flex items-center gap-2">
                   <Checkbox
-                    checked={selectedEdgeIds.length === relevantRelationships.length && relevantRelationships.length > 0}
+                    checked={relevantRelationships.length > 0 && selectedEdgeIds.length === relevantRelationships.length}
                     indeterminate={selectedEdgeIds.length > 0 && selectedEdgeIds.length < relevantRelationships.length}
                     onChange={toggleSelectAll}
                   >
@@ -208,7 +221,10 @@ export function RelationshipEditor() {
                             danger
                             size="small"
                             icon={<Trash2 size={14} />}
-                            onClick={() => removeRelationship(rel.id)}
+                            onClick={() => {
+                              removeRelationship(rel.id);
+                              setSelectedEdgeIds((prev) => prev.filter((id) => id !== rel.id));
+                            }}
                           />
                         </div>
                       }
@@ -285,7 +301,7 @@ export function RelationshipEditor() {
               <Button type="primary" onClick={handleAddRelationship}>
                 添加关系
               </Button>
-              <Button onClick={() => setMode('list')}>取消</Button>
+              <Button onClick={() => handleModeChange('list')}>取消</Button>
             </div>
           </div>
         )}
@@ -309,42 +325,56 @@ export function RelationshipEditor() {
                   size="small"
                   onClick={toggleSelectAll}
                 >
-                  {selectedEdgeIds.length === relevantRelationships.length ? '取消全选' : '全选'}
+                  {relevantRelationships.length > 0 && selectedEdgeIds.length === relevantRelationships.length ? '取消全选' : '全选'}
                 </Button>
               </div>
             </div>
 
             <div className="max-h-48 overflow-y-auto border border-white/10 rounded-lg p-2 space-y-1">
-              {relevantRelationships.map((rel) => {
-                const sourceFile = files.find((f) => f.id === rel.sourceId);
-                const targetFile = files.find((f) => f.id === rel.targetId);
-                if (!sourceFile || !targetFile) return null;
+              {relevantRelationships.length > 0 ? (
+                relevantRelationships.map((rel) => {
+                  const sourceFile = files.find((f) => f.id === rel.sourceId);
+                  const targetFile = files.find((f) => f.id === rel.targetId);
+                  if (!sourceFile || !targetFile) return null;
 
-                return (
-                  <div
-                    key={rel.id}
-                    className={`px-2 py-1 rounded cursor-pointer transition-colors ${
-                      selectedEdgeIds.includes(rel.id) 
-                        ? 'bg-accent/20 border border-accent/50' 
-                        : 'hover:bg-primary'
-                    }`}
-                    onClick={() => toggleEdgeSelection(rel.id)}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <Checkbox
-                        checked={selectedEdgeIds.includes(rel.id)}
-                        onChange={() => toggleEdgeSelection(rel.id)}
-                      />
-                      <span className="text-sm text-white flex-1 truncate">
-                        {sourceFile.name} → {targetFile.name}
-                      </span>
-                      <Tag color={getTypeColor(rel.type)} className="text-xs">
-                        {getTypeLabel(rel.type)}
-                      </Tag>
+                  const isSelected = selectedEdgeIds.includes(rel.id);
+
+                  return (
+                    <div
+                      key={rel.id}
+                      className={`px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                        isSelected 
+                          ? 'bg-accent/20 border border-accent/50' 
+                          : 'hover:bg-primary'
+                      }`}
+                    >
+                      <div 
+                        className="flex items-center gap-2 w-full"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleEdgeSelection(rel.id);
+                        }}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => toggleEdgeSelection(rel.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="text-sm text-white flex-1 truncate">
+                          {sourceFile.name} → {targetFile.name}
+                        </span>
+                        <Tag color={getTypeColor(rel.type)} className="text-xs">
+                          {getTypeLabel(rel.type)}
+                        </Tag>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="text-center text-gray-500 py-4">
+                  暂无关系可合并
+                </div>
+              )}
             </div>
 
             <div>
@@ -368,7 +398,7 @@ export function RelationshipEditor() {
               >
                 合并 {selectedEdgeIds.length} 条关系
               </Button>
-              <Button onClick={() => setMode('list')}>取消</Button>
+              <Button onClick={() => handleModeChange('list')}>取消</Button>
             </div>
           </div>
         )}

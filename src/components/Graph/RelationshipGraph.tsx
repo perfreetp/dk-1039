@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -28,14 +28,13 @@ const edgeTypes = {
   custom: CustomEdge,
 };
 
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
-
 const getLayoutedElements = (
   nodes: Node[],
   edges: Edge[],
   direction: 'TB' | 'LR' = 'TB'
 ) => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 150 });
 
   nodes.forEach((node) => {
@@ -76,7 +75,7 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
     removeRelationship,
   } = useAppStore();
 
-  const isInitialized = useRef(false);
+  const [graphKey, setGraphKey] = useState(0);
 
   const filteredFiles = useMemo(() => {
     return files.filter((file) => {
@@ -148,14 +147,16 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
 
   useEffect(() => {
-    if (isInitialized.current) {
-      const { nodes: newNodes, edges: newEdges } = getLayoutedElements(computedNodes, computedEdges);
-      setNodes(newNodes);
-      setEdges(newEdges);
-    } else {
-      isInitialized.current = true;
-    }
-  }, [computedNodes, computedEdges, setNodes, setEdges]);
+    const { nodes: newNodes, edges: newEdges } = getLayoutedElements(computedNodes, computedEdges);
+    setNodes(newNodes);
+    setEdges(newEdges);
+    setGraphKey(prev => prev + 1);
+  }, [computedNodes, computedEdges]);
+
+  useEffect(() => {
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+  }, [layoutedNodes, layoutedEdges, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -178,8 +179,9 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
   return (
     <div ref={graphRef} className="w-full h-full">
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        key={graphKey}
+        nodes={layoutedNodes}
+        edges={layoutedEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
