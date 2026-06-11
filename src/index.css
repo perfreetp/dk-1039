@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Source Sans 3', 'Inter', system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+}
+
+@layer components {
+  .glass-effect {
+    @apply bg-primary/80 backdrop-blur-lg border border-white/10;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-accent text-white rounded-lg font-medium
+           hover:bg-accent-light transition-all duration-200
+           active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-primary-lighter text-white rounded-lg font-medium
+           border border-white/10 hover:bg-primary-light transition-all duration-200
+           active:scale-95;
+  }
+
+  .card {
+    @apply bg-primary-light rounded-xl border border-white/10 p-4;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 bg-primary-lighter rounded-lg border border-white/10
+           text-white placeholder:text-gray-500 focus:outline-none
+           focus:border-accent transition-colors;
+  }
+
+  .sidebar {
+    @apply bg-primary-light border-l border-white/10 h-full;
+  }
+}
+
+.react-flow__node {
+  cursor: pointer;
+}
+
+.react-flow__node:hover {
+  z-index: 100 !important;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__controls {
+  box-shadow: none !important;
+}
+
+.react-flow__controls-button {
+  background: #16213e !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  color: #e0e0e0 !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #0f3460 !important;
+}
+
+.react-flow__minimap {
+  background: #16213e !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #0f3460;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #16213e;
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-r from-accent to-pink-400 bg-clip-text text-transparent;
+  }
+}
