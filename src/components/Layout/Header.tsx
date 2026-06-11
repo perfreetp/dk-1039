@@ -1,7 +1,11 @@
-import { FolderOpen, Scan, Search, Download, Plus } from 'lucide-react';
-import { Button, Input, Select, Space, Badge } from 'antd';
+import { FolderOpen, Scan, Search, Download, Plus, Calendar, X } from 'lucide-react';
+import { Button, Input, Select, Space, DatePicker, Popover, Badge } from 'antd';
+import dayjs from 'dayjs';
 import { useAppStore } from '../../store/appStore';
 import { useFileScanner } from '../../hooks/useFileScanner';
+import type { Dayjs } from 'dayjs';
+
+const { RangePicker } = DatePicker;
 
 interface HeaderProps {
   onOpenSearch: () => void;
@@ -18,6 +22,47 @@ export function Header({ onOpenSearch, onOpenExport, onOpenEditor }: HeaderProps
   } = useAppStore();
 
   const { scanDirectory, loadMockData, progress } = useFileScanner();
+
+  const handleDateRangeChange = (dates: null | [Dayjs | null, Dayjs | null]) => {
+    if (dates && dates[0] && dates[1]) {
+      setFilters({
+        dateRange: {
+          start: dates[0].startOf('day').toISOString(),
+          end: dates[1].endOf('day').toISOString(),
+        },
+      });
+    } else {
+      setFilters({ dateRange: null });
+    }
+  };
+
+  const clearDateFilter = () => {
+    setFilters({ dateRange: null });
+  };
+
+  const hasDateFilter = filters.dateRange !== null;
+
+  const dateFilterContent = (
+    <div className="p-2">
+      <p className="text-gray-400 text-sm mb-2">按修改时间筛选</p>
+      <RangePicker
+        value={filters.dateRange ? [dayjs(filters.dateRange.start), dayjs(filters.dateRange.end)] : null}
+        onChange={handleDateRangeChange}
+        className="w-full"
+      />
+      {hasDateFilter && (
+        <Button
+          type="text"
+          size="small"
+          icon={<X size={14} />}
+          onClick={clearDateFilter}
+          className="mt-2 w-full"
+        >
+          清除筛选
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <header className="h-16 bg-primary-light border-b border-white/10 flex items-center justify-between px-6">
@@ -94,6 +139,26 @@ export function Header({ onOpenSearch, onOpenExport, onOpenEditor }: HeaderProps
             { label: '快捷方式', value: 'shortcut' },
           ]}
         />
+
+        <Popover
+          content={dateFilterContent}
+          title={null}
+          trigger="click"
+          placement="bottomRight"
+        >
+          <Button
+            className={`flex items-center gap-2 ${hasDateFilter ? 'border-accent text-accent' : ''}`}
+            icon={<Calendar size={16} />}
+          >
+            {hasDateFilter ? (
+              <span className="text-accent">
+                {dayjs(filters.dateRange!.start).format('MM/DD')} - {dayjs(filters.dateRange!.end).format('MM/DD')}
+              </span>
+            ) : (
+              '时间筛选'
+            )}
+          </Button>
+        </Popover>
 
         <Space size="small">
           <Badge count={0} size="small">

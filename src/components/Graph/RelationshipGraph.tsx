@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -36,11 +36,10 @@ const getLayoutedElements = (
   edges: Edge[],
   direction: 'TB' | 'LR' = 'TB'
 ) => {
-  const isHorizontal = direction === 'LR';
-  dagreGraph.setGraph({ rankdir: direction, nodesep: 80, ranksep: 120 });
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 100, ranksep: 150 });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 200, height: 60 });
+    dagreGraph.setNode(node.id, { width: 220, height: 80 });
   });
 
   edges.forEach((edge) => {
@@ -54,8 +53,8 @@ const getLayoutedElements = (
     return {
       ...node,
       position: {
-        x: nodeWithPosition.x - 100,
-        y: nodeWithPosition.y - 30,
+        x: nodeWithPosition.x - 110,
+        y: nodeWithPosition.y - 40,
       },
     };
   });
@@ -77,9 +76,20 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
     removeRelationship,
   } = useAppStore();
 
+  const isInitialized = useRef(false);
+
   const filteredFiles = useMemo(() => {
     return files.filter((file) => {
       if (!filters.fileTypes.includes(file.type)) return false;
+      
+      if (filters.dateRange) {
+        const fileDate = new Date(file.modifiedAt);
+        const start = new Date(filters.dateRange.start);
+        const end = new Date(filters.dateRange.end);
+        end.setHours(23, 59, 59, 999);
+        if (fileDate < start || fileDate > end) return false;
+      }
+      
       if (filters.searchKeyword) {
         const keyword = filters.searchKeyword.toLowerCase();
         if (
@@ -94,14 +104,13 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
   }, [files, filters]);
 
   const filteredRelationships = useMemo(() => {
+    const fileIds = new Set(filteredFiles.map(f => f.id));
     return relationships.filter((rel) => {
-      const sourceFile = files.find((f) => f.id === rel.sourceId);
-      const targetFile = files.find((f) => f.id === rel.targetId);
-      return sourceFile && targetFile && filteredFiles.includes(sourceFile) && filteredFiles.includes(targetFile);
+      return fileIds.has(rel.sourceId) && fileIds.has(rel.targetId);
     });
-  }, [relationships, files, filteredFiles]);
+  }, [relationships, filteredFiles]);
 
-  const initialNodes: Node[] = useMemo(() => {
+  const computedNodes: Node[] = useMemo(() => {
     return filteredFiles.map((file: FileNode) => ({
       id: file.id,
       type: 'fileNode',
@@ -116,7 +125,7 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
     }));
   }, [filteredFiles, selectedFileId]);
 
-  const initialEdges: Edge[] = useMemo(() => {
+  const computedEdges: Edge[] = useMemo(() => {
     return filteredRelationships.map((rel: RelationshipEdge) => ({
       id: rel.id,
       source: rel.sourceId,
@@ -132,11 +141,21 @@ export function RelationshipGraph({ graphRef }: RelationshipGraphProps) {
   }, [filteredRelationships, removeRelationship]);
 
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(() => {
-    return getLayoutedElements(initialNodes, initialEdges);
-  }, [initialNodes, initialEdges]);
+    return getLayoutedElements(computedNodes, computedEdges);
+  }, [computedNodes, computedEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
+
+  useEffect(() => {
+    if (isInitialized.current) {
+      const { nodes: newNodes, edges: newEdges } = getLayoutedElements(computedNodes, computedEdges);
+      setNodes(newNodes);
+      setEdges(newEdges);
+    } else {
+      isInitialized.current = true;
+    }
+  }, [computedNodes, computedEdges, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => {

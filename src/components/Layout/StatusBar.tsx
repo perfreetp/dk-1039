@@ -1,5 +1,6 @@
-import { FileText, Link2, Filter, Eye, EyeOff } from 'lucide-react';
+import { FileText, Link2, Filter, Eye, EyeOff, Calendar } from 'lucide-react';
 import { useAppStore } from '../../store/appStore';
+import dayjs from 'dayjs';
 
 export function StatusBar() {
   const {
@@ -12,6 +13,15 @@ export function StatusBar() {
 
   const filteredFiles = files.filter((file) => {
     if (!filters.fileTypes.includes(file.type)) return false;
+    
+    if (filters.dateRange) {
+      const fileDate = new Date(file.modifiedAt);
+      const start = new Date(filters.dateRange.start);
+      const end = new Date(filters.dateRange.end);
+      end.setHours(23, 59, 59, 999);
+      if (fileDate < start || fileDate > end) return false;
+    }
+    
     if (filters.searchKeyword) {
       const keyword = filters.searchKeyword.toLowerCase();
       if (!file.name.toLowerCase().includes(keyword) && !file.path.toLowerCase().includes(keyword)) {
@@ -26,6 +36,15 @@ export function StatusBar() {
     const targetFile = files.find((f) => f.id === rel.targetId);
     return sourceFile && targetFile && filteredFiles.includes(sourceFile) && filteredFiles.includes(targetFile);
   });
+
+  const hasActiveFilters = filters.dateRange !== null || filters.searchKeyword !== '';
+
+  const formatDateRange = () => {
+    if (!filters.dateRange) return '';
+    const start = dayjs(filters.dateRange.start).format('YYYY-MM-DD');
+    const end = dayjs(filters.dateRange.end).format('YYYY-MM-DD');
+    return `${start} 至 ${end}`;
+  };
 
   return (
     <footer className="h-8 bg-primary-light border-t border-white/10 flex items-center justify-between px-6 text-xs">
@@ -53,12 +72,29 @@ export function StatusBar() {
           <span className="text-gray-400">筛选条件：</span>
           <span className="text-white">
             {filters.fileTypes.join(', ')}
-            {filters.searchKeyword && ` | "${filters.searchKeyword}"`}
           </span>
         </div>
+
+        {filters.searchKeyword && (
+          <div className="flex items-center gap-1 text-accent">
+            <span>关键词: "{filters.searchKeyword}"</span>
+          </div>
+        )}
+
+        {filters.dateRange && (
+          <div className="flex items-center gap-1 text-accent">
+            <Calendar size={12} />
+            <span>{formatDateRange()}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
+        {hasActiveFilters && (
+          <span className="text-accent text-xs">
+            筛选生效中
+          </span>
+        )}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
